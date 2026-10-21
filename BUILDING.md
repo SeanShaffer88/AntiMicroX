@@ -116,8 +116,23 @@ ctest --test-dir build-tests --output-on-failure
 CTest selects Qt's offscreen platform for headless execution. The suite checks
 invalid or unsupported gamepad profile indices, continued loading after rejected
 elements, both legacy and current trigger indices, valid D-pad settings, and
-parser lifetime across repeated loads. Unsupported entries are skipped as whole
+parser lifetime across repeated loads. Integration checks also cover malformed
+complete-profile rejection, recovery, and versions 2–5 joystick migration with
+Unicode, empty, and truncated inputs. Unsupported entries are skipped as whole
 XML subtrees; supported mappings later in the set remain usable.
+
+To include the pinned community profile corpus used in CI:
+
+```bash
+git clone https://github.com/AntiMicroX/antimicrox-profiles.git reference-profiles
+git -C reference-profiles checkout 83968e16a5cc17e80a9031109f116e5d66395dca
+ANTIMICROX_PROFILE_CORPUS="$PWD/reference-profiles/applications" ctest --test-dir build-tests --output-on-failure
+```
+
+Without this environment variable, only the community corpus cases are skipped.
+The corpus checks assert parser acceptance and unchanged source files, not that
+every binding emits the expected input. Physical-controller testing remains
+necessary. CI sets the environment variable and checks out the pinned corpus.
 
 The test target compiles production sources separately from the application.
 `WITH_TESTS` remains off for normal builds. The older GUI test sketches are not

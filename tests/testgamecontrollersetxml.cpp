@@ -9,6 +9,7 @@
 #include "gamecontroller/gamecontrollerset.h"
 #include "joyaxis.h"
 #include "joybuttontypes/joybutton.h"
+#include "joystick.h"
 #include "logger.h"
 #include "vdpad.h"
 #include "xml/joyaxisxml.h"
@@ -39,6 +40,8 @@ class TestGameControllerSetXml : public QObject
     void malformedProfile_data();
     void malformedProfile();
     void retryAfterMalformedProfile();
+    void legacyMigration_data();
+    void legacyMigration();
     void communityProfiles_data();
     void communityProfiles();
     void invalidElements_data();
@@ -252,6 +255,92 @@ void TestGameControllerSetXml::retryAfterMalformedProfile()
     QVERIFY(!reader.hasError());
     QCOMPARE(m_device->getProfileName(), QString("Loaded"));
     QVERIFY(m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
+}
+void TestGameControllerSetXml::legacyMigration_data()
+{
+    QTest::addColumn<int>("version");
+    QTest::addColumn<QString>("kind");
+    for (int version = 2; version <= 5; ++version)
+    {
+        for (const QString &kind : {QString("unicode"), QString("empty"), QString("truncated")})
+            QTest::newRow(QString("v%1-%2").arg(version).arg(kind).toUtf8().constData()) << version << kind;
+    }
+}
+void TestGameControllerSetXml::legacyMigration()
+{
+    QFETCH(int, version);
+    QFETCH(QString, kind);
+    const QString name = QString::fromUtf8("Caf\xc3\xa9 \xe6\xbc\xa2 Game \xf0\x9f\x8e\xae");
+    QString source = QString("<joystick configversion=\"%1\"").arg(version);
+    if (kind == "empty")
+        source += "/>";
+    else if (kind == "truncated")
+        source += "><profilename>Changed";
+    else
+        source += QString("><profilename>%1</profilename><sets><set index=\"1\">"
+                          "<button index=\"1\"><toggle>true</toggle></button></set></sets></joystick>")
+                      .arg(name);
+    const QByteArray original = source.toUtf8();
+    const QString path = m_directory.filePath("legacy.amgp");
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(original), qint64(original.size()));
+    }
+    const int index = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_UNKNOWN, 2, 2, 0);
+    QVERIFY2(index >= 0, SDL_GetError());
+    SDL_Joystick *handle = SDL_JoystickOpen(index);
+    if (handle == nullptr)
+    {
+        SDL_JoystickDetachVirtual(index);
+        QFAIL(SDL_GetError());
+    }
+    bool error = false;
+    bool has_error = false;
+    bool toggle = false;
+    QString loaded_name;
+    {
+        Joystick device(handle, index, m_settings.get(), nullptr);
+        device.setProfileName("Before");
+        device.getActiveSetJoystick()->getJoyButton(1)->setToggle(true);
+        XMLConfigReader reader;
+        reader.setJoystick(&device);
+        reader.setFileName(path);
+        error = reader.read();
+        has_error = reader.hasError();
+        loaded_name = device.getProfileName();
+        toggle = device.getActiveSetJoystick()->getJoyButton(kind == "truncated" ? 1 : 0)->getToggleState();
+    }
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    SDL_JoystickClose(handle);
+    QCOMPARE(SDL_JoystickDetachVirtual(index), 0);
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray saved = file.readAll();
+    if (kind == "truncated")
+    {
+        QVERIFY(error);
+        QVERIFY(has_error);
+        QCOMPARE(loaded_name, QString("Before"));
+        QVERIFY(toggle);
+        QCOMPARE(saved, original);
+    } else
+    {
+        QVERIFY(!error);
+        QVERIFY(!has_error);
+        QXmlStreamReader xml(saved);
+        QVERIFY(xml.readNextStartElement());
+        QCOMPARE(xml.attributes().value("configversion").toString(), QString("6"));
+        while (!xml.atEnd())
+            xml.readNext();
+        QVERIFY2(!xml.hasError(), qPrintable(xml.errorString()));
+        if (kind == "unicode")
+        {
+            QCOMPARE(loaded_name, name);
+            QVERIFY(toggle);
+            QVERIFY(saved.contains(name.toUtf8()));
+        }
+    }
 }
 void TestGameControllerSetXml::communityProfiles_data()
 {
