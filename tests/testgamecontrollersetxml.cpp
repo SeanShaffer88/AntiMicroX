@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "antimicrosettings.h"
+#include "antkeymapper.h"
+#include "eventhandlerfactory.h"
+#include "xmlconfigreader.h"
+
 #include "gamecontroller/gamecontroller.h"
 #include "gamecontroller/gamecontrollerset.h"
 #include "joyaxis.h"
@@ -9,6 +13,8 @@
 #include "vdpad.h"
 #include "xml/joyaxisxml.h"
 #include "xml/joybuttonxml.h"
+#include <QDirIterator>
+#include <QFile>
 
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -30,6 +36,11 @@ class TestGameControllerSetXml : public QObject
     void cleanupTestCase();
     void init();
     void cleanup();
+    void malformedProfile_data();
+    void malformedProfile();
+    void retryAfterMalformedProfile();
+    void communityProfiles_data();
+    void communityProfiles();
     void invalidElements_data();
     void invalidElements();
     void triggerAliases_data();
@@ -55,6 +66,13 @@ void TestGameControllerSetXml::initTestCase()
     QStandardPaths::setTestModeEnabled(true);
     Logger::createInstance(nullptr, Logger::LOG_NONE);
     QCOMPARE(SDL_Init(SDL_INIT_GAMECONTROLLER), 0);
+#ifdef Q_OS_WIN
+    AntKeyMapper::getInstance("sendinput");
+    EventHandlerFactory::getInstance("sendinput");
+#elif defined(WITH_UINPUT)
+    AntKeyMapper::getInstance("uinput");
+    EventHandlerFactory::getInstance("uinput");
+#endif
     m_settings = std::make_unique<AntiMicroSettings>(m_directory.filePath("settings.ini"), QSettings::IniFormat);
 }
 
@@ -62,6 +80,10 @@ void TestGameControllerSetXml::cleanupTestCase()
 {
     m_settings.reset();
     SDL_Quit();
+#if defined(Q_OS_WIN) || defined(WITH_UINPUT)
+    AntKeyMapper::getInstance()->deleteInstance();
+    EventHandlerFactory::getInstance()->deleteInstance();
+#endif
     delete Logger::getInstance();
 }
 
@@ -172,5 +194,100 @@ void TestGameControllerSetXml::reloadDoesNotRetainParsers()
     QVERIFY(set->findChildren<JoyAxisXml *>(QString(), Qt::FindDirectChildrenOnly).isEmpty());
 }
 
+void TestGameControllerSetXml::malformedProfile_data()
+{
+    QTest::addColumn<QByteArray>("contents");
+    const QByteArray prefix = "<gamecontroller configversion=\"19\"><profilename>Changed</profilename>";
+    QTest::newRow("truncated") << prefix + "<sets>";
+    QTest::newRow("mismatched") << prefix + "</wrong>";
+    QTest::newRow("undefined-entity") << prefix + "<description>&missing;</description></gamecontroller>";
+    QTest::newRow("trailing-junk") << prefix + "</gamecontroller>junk";
+    QTest::newRow("multiple-roots") << prefix + "</gamecontroller><gamecontroller/>";
+}
+void TestGameControllerSetXml::malformedProfile()
+{
+    QFETCH(QByteArray, contents);
+    const QString path = m_directory.filePath("malformed.amgp");
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(contents), qint64(contents.size()));
+    }
+    m_device->setProfileName("Before");
+    m_device->getActiveSetJoystick()->getJoyButton(0)->setToggle(true);
+    XMLConfigReader reader;
+    reader.setJoystick(m_device.get());
+    reader.setFileName(path);
+    QVERIFY(reader.read());
+    QVERIFY(reader.hasError());
+    QVERIFY(!reader.getErrorString().isEmpty());
+    QCOMPARE(m_device->getProfileName(), QString("Before"));
+    QVERIFY(m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), contents);
+}
+void TestGameControllerSetXml::retryAfterMalformedProfile()
+{
+    const QString path = m_directory.filePath("retry.amgp");
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write("<gamecontroller configversion=\"19\"><profilename>Changed</profilename><sets>") > 0);
+    }
+    m_device->setProfileName("Before");
+    XMLConfigReader reader;
+    reader.setJoystick(m_device.get());
+    reader.setFileName(path);
+    QVERIFY(reader.read());
+    QCOMPARE(m_device->getProfileName(), QString("Before"));
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QVERIFY(file.write("<gamecontroller configversion=\"19\"><profilename>Loaded</profilename>"
+                           "<sets><set index=\"1\"><button index=\"1\"><toggle>true</toggle></button></set></sets>"
+                           "</gamecontroller>") > 0);
+    }
+    QVERIFY(!reader.read());
+    QVERIFY(!reader.hasError());
+    QCOMPARE(m_device->getProfileName(), QString("Loaded"));
+    QVERIFY(m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
+}
+void TestGameControllerSetXml::communityProfiles_data()
+{
+    QTest::addColumn<QString>("path");
+    const QString directory = QString::fromLocal8Bit(qgetenv("ANTIMICROX_PROFILE_CORPUS"));
+    if (directory.isEmpty())
+        QSKIP("Set ANTIMICROX_PROFILE_CORPUS to the pinned profile corpus applications directory");
+#if !defined(Q_OS_WIN) && !defined(WITH_UINPUT)
+    QSKIP("Community keyboard bindings require the uinput or sendinput key mapper");
+#endif
+    QVERIFY(QDir(directory).exists());
+    QDirIterator files(directory, {"*.gamecontroller.amgp"}, QDir::Files, QDirIterator::Subdirectories);
+    int count = 0;
+    while (files.hasNext())
+    {
+        const QString path = files.next();
+        QTest::newRow(QDir(directory).relativeFilePath(path).toUtf8().constData()) << path;
+        ++count;
+    }
+    QVERIFY2(count > 0, "The profile corpus contained no matching files");
+}
+void TestGameControllerSetXml::communityProfiles()
+{
+    QFETCH(QString, path);
+    QFile before(path);
+    QVERIFY(before.open(QIODevice::ReadOnly));
+    const QByteArray original = before.readAll();
+    before.close();
+    XMLConfigReader reader;
+    reader.setJoystick(m_device.get());
+    reader.setFileName(path);
+    QVERIFY2(!reader.read(), qPrintable(reader.getErrorString()));
+    QVERIFY(!reader.hasError());
+    QFile after(path);
+    QVERIFY(after.open(QIODevice::ReadOnly));
+    QCOMPARE(after.readAll(), original);
+}
 QTEST_MAIN(TestGameControllerSetXml)
 #include "testgamecontrollersetxml.moc"

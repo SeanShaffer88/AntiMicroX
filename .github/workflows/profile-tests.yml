@@ -43,5 +43,14 @@ jobs:
                   -DWITH_X11=OFF -DWITH_XTEST=OFF -DAPPDATA=OFF
             - name: Build regression tests
               run: cmake --build build-tests --target ProfileXmlTests --parallel 2
+            - name: Check out pinned community profiles
+              uses: actions/checkout@v4
+              with:
+                  repository: AntiMicroX/antimicrox-profiles
+                  ref: 83968e16a5cc17e80a9031109f116e5d66395dca
+                  path: reference-profiles
+                  persist-credentials: false
             - name: Run regression tests
+              env:
+                  ANTIMICROX_PROFILE_CORPUS: ${{ github.workspace }}/reference-profiles/applications
               run: ctest --test-dir build-tests --output-on-failure
