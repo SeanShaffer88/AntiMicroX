@@ -101,6 +101,43 @@ Run built binaries
 ./bin/antimicrox
 ```
 
+### Running profile XML regression tests
+
+The profile reader tests use SDL virtual controllers, so no physical gamepad is
+required. Install the build dependencies above, including Qt Test (provided by
+the Qt base development packages), and use SDL 2.0.14 or newer:
+
+```bash
+cmake -S . -B build-tests -DWITH_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-tests --target ProfileXmlTests --parallel 2
+ctest --test-dir build-tests --output-on-failure
+```
+
+CTest selects Qt's offscreen platform for headless execution. The suite checks
+invalid or unsupported gamepad profile indices, continued loading after rejected
+elements, both legacy and current trigger indices, valid D-pad settings, and
+parser lifetime across repeated loads. Integration checks also cover malformed
+complete-profile rejection, recovery, and versions 2–5 joystick migration with
+Unicode, empty, and truncated inputs. Unsupported entries are skipped as whole
+XML subtrees; supported mappings later in the set remain usable.
+
+To include the pinned community profile corpus used in CI:
+
+```bash
+git clone https://github.com/AntiMicroX/antimicrox-profiles.git reference-profiles
+git -C reference-profiles checkout 83968e16a5cc17e80a9031109f116e5d66395dca
+ANTIMICROX_PROFILE_CORPUS="$PWD/reference-profiles/applications" ctest --test-dir build-tests --output-on-failure
+```
+
+Without this environment variable, only the community corpus cases are skipped.
+The corpus checks assert parser acceptance and unchanged source files, not that
+every binding emits the expected input. Physical-controller testing remains
+necessary. CI sets the environment variable and checks out the pinned corpus.
+
+The test target compiles production sources separately from the application.
+`WITH_TESTS` remains off for normal builds. The older GUI test sketches are not
+part of this regression suite.
+
 #### MSVC building tips
 
 Recent versions of Visual Studio (2017+) have support for cmake projects. Under Visual Studio 2022, building AntiMicroX is quite straight forward.
@@ -268,7 +305,41 @@ flatpak install flathub org.kde.Platform//6.10 org.kde.Sdk//6.10
 flatpak-builder --user --install build-flatpak/ other/io.github.antimicrox.antimicrox.yml --force-clean
 ```
 
+## Profile writer regression tests
+
+These standalone tests compile the production `XMLConfigWriter` with a controlled
+serializer in place of the SDL/device implementation. They exercise file replacement,
+UTF-8 output, injected stream errors, cancellation, commit failure, retries, and invalid
+inputs without physical controllers or a desktop session. Qt Core and Qt Test are required.
+
+```sh
+cmake -S tests/profilewriter -B build-profile-writer
+cmake --build build-profile-writer --config Debug
+ctest --test-dir build-profile-writer -C Debug --output-on-failure
+```
+
+The QtTest text log is saved as `build-profile-writer/profile-writer-results.txt`.
+CI runs the suite with Qt 5 and Qt 6 on Linux and Windows. This suite does not replace
+full device/profile round-trip or interactive testing.
+
+Normal profile saves use a temporary file in the destination directory, then commit
+the replacement. The directory must permit temporary-file creation; the writer reports
+a failure rather than falling back to an in-place overwrite. Automatic migration of
+older profiles is handled separately by the profile reader.
+
 ## Building Windows installer
+
+The startup-shortcut regression tests can run independently of the application and SDL.
+They require Qt Core and Qt Test and use temporary directories, leaving your real Startup folder untouched:
+
+```sh
+cmake -S tests/startupshortcut -B build-startup
+cmake --build build-startup --config Debug
+ctest --test-dir build-startup -C Debug --output-on-failure
+```
+
+On Windows these tests exercise real `.lnk` files; on Unix they exercise Qt's symbolic-link equivalent.
+The Windows CI runs the tests with Qt 5 and Qt 6.
 
 In case of building Windows package you will need [NSIS](https://nsis.sourceforge.io/Download).
 
