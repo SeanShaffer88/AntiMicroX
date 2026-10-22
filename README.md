@@ -1,3 +1,5 @@
+> **Fork identity: contribution fork.** Derived from [AntiMicroX/antimicrox](https://github.com/AntiMicroX/antimicrox). Profile-reliability integration is proposed in [PR #1](https://github.com/SeanShaffer88/AntiMicroX/pull/1); it is not on the default branch. Use the PR for fork-change discussion. See [fork provenance](PROVENANCE.md) for ownership and reporting routes.
+
 # <img src="./src/images/antimicrox.png" alt="Icon" width="60"/> AntiMicroX
 
 1. [Description](#description)  
@@ -297,3 +299,4 @@ Translation status
 </a>
 
 More information about translating can be found [here](https://github.com/AntiMicroX/antimicrox/wiki/Translating-AntiMicroX).
+
