@@ -333,6 +333,23 @@ elements this build does not understand would be lost. `src/profileformat.h` hol
 latest supported format version. Automatic migration of older profiles is handled
 separately by the profile reader.
 
+## Translation lookup tests
+
+The language helpers in `src/translations.h` decide which translation files are
+loaded at startup and after a language change. They are header-only and depend on
+Qt Core alone, so the tests run without a display server, SDL or generated headers:
+
+```sh
+cmake -S tests/translations -B build-translations
+cmake --build build-translations --config Debug
+ctest --test-dir build-translations -C Debug --output-on-failure
+```
+
+The suite covers installed, build-tree, AppImage and Flatpak layouts, missing
+languages, unusable language codes and how the `Language` setting is read and
+cleared. CI runs it with Qt 5 and Qt 6 on Linux and Windows. It does not check the
+translated strings themselves.
+
 ## Building Windows installer
 
 The startup-shortcut regression tests can run independently of the application and SDL.
