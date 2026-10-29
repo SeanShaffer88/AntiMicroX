@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "globalvariables.h"
+#include "profileformat.h"
 #include "xml/inputdevicexml.h"
 #include "xmlconfigmigration.h"
 #include "xmlconfigreader.h"
@@ -72,6 +73,13 @@ class TestXmlConfigReader : public QObject
     void retryAfterInvalidRoot();
     void switchingToMissingFileNeverReloadsPreviousProfile();
     void switchingToExistingFile();
+    void validConfigVersions_data();
+    void validConfigVersions();
+    void unsupportedConfigVersion_data();
+    void unsupportedConfigVersion();
+    void unreadableConfigVersion_data();
+    void unreadableConfigVersion();
+    void retryAfterUnsupportedVersion();
     void repeatedReadStartsAtBeginning();
     void changingFilenameReleasesPreviousFile();
 
@@ -215,6 +223,101 @@ void TestXmlConfigReader::switchingToExistingFile()
     QCOMPARE(reader.getFileName(), second);
     QVERIFY(!reader.read());
     QCOMPARE(m_device.profileName, QString("Second"));
+}
+void TestXmlConfigReader::validConfigVersions_data()
+{
+    QTest::addColumn<QString>("attributes");
+    QTest::newRow("latest") << QString(" configversion=\"%1\"").arg(ProfileFormat::LATEST_FILE_VERSION);
+    QTest::newRow("oldest-migrated") << QString(" configversion=\"6\"");
+    QTest::newRow("versionless") << QString();
+    QTest::newRow("legacy-version") << QString(" configversion=\"2\"");
+    QTest::newRow("surrounding-space") << QString(" configversion=\" %1 \"").arg(ProfileFormat::LATEST_FILE_VERSION);
+}
+void TestXmlConfigReader::validConfigVersions()
+{
+    QFETCH(QString, attributes);
+    writeProfile(m_path, QString("<joystick%1><profilename>Loaded</profilename></joystick>").arg(attributes).toUtf8());
+    XMLConfigReader reader;
+    reader.setJoystick(&m_device);
+    reader.setFileName(m_path);
+    // The migration collaborator never migrates; only parsing is asserted here.
+    QVERIFY(!reader.read());
+    QVERIFY(!reader.hasError());
+    QCOMPARE(m_device.profileName, QString("Loaded"));
+    QCOMPARE(m_device.reads, 1);
+}
+void TestXmlConfigReader::unsupportedConfigVersion_data()
+{
+    QTest::addColumn<QString>("root");
+    QTest::addColumn<QString>("declared");
+    for (const QString &root : {QString("joystick"), QString("gamecontroller")})
+    {
+        for (const QString &declared :
+             {QString::number(ProfileFormat::LATEST_FILE_VERSION + 1), QString("1000"), QString("2147483647")})
+        {
+            const QByteArray row = (root + ":" + declared).toUtf8();
+            QTest::newRow(row.constData()) << root << declared;
+        }
+    }
+}
+void TestXmlConfigReader::unsupportedConfigVersion()
+{
+    QFETCH(QString, root);
+    QFETCH(QString, declared);
+    const QByteArray contents = QString("<%1 configversion=\"%2\" appversion=\"99.1.2\">"
+                                        "<profilename>FromNewerBuild</profilename></%1>")
+                                    .arg(root, declared)
+                                    .toUtf8();
+    writeProfile(m_path, contents);
+    XMLConfigReader reader;
+    reader.setJoystick(&m_device);
+    reader.setFileName(m_path);
+    // Newer profiles must not modify mappings and must stay untouched on disk.
+    verifyFailure(reader);
+    QVERIFY2(reader.getErrorString().contains(declared), qPrintable(reader.getErrorString()));
+    QVERIFY2(reader.getErrorString().contains(QString::number(ProfileFormat::LATEST_FILE_VERSION)),
+             qPrintable(reader.getErrorString()));
+    QVERIFY2(reader.getErrorString().contains("99.1.2"), qPrintable(reader.getErrorString()));
+    QVERIFY(!reader.getConfigFile()->isOpen());
+    QFile profile(m_path);
+    QVERIFY(profile.open(QIODevice::ReadOnly));
+    QCOMPARE(profile.readAll(), contents);
+}
+void TestXmlConfigReader::unreadableConfigVersion_data()
+{
+    QTest::addColumn<QString>("declared");
+    QTest::newRow("empty") << QString();
+    QTest::newRow("not-a-number") << QString("abc");
+    QTest::newRow("trailing-garbage") << QString("19x");
+    QTest::newRow("negative") << QString("-1");
+    QTest::newRow("whitespace-only") << QString("   ");
+}
+void TestXmlConfigReader::unreadableConfigVersion()
+{
+    QFETCH(QString, declared);
+    writeProfile(m_path, QString("<joystick configversion=\"%1\"><profilename>Loaded</profilename></joystick>")
+                             .arg(declared)
+                             .toUtf8());
+    XMLConfigReader reader;
+    reader.setJoystick(&m_device);
+    reader.setFileName(m_path);
+    verifyFailure(reader);
+    QVERIFY2(reader.getErrorString().contains("config version"), qPrintable(reader.getErrorString()));
+    QVERIFY(!reader.getConfigFile()->isOpen());
+}
+void TestXmlConfigReader::retryAfterUnsupportedVersion()
+{
+    writeProfile(m_path, "<joystick configversion=\"20\"><profilename>FromNewerBuild</profilename></joystick>");
+    XMLConfigReader reader;
+    reader.setJoystick(&m_device);
+    reader.setFileName(m_path);
+    verifyFailure(reader);
+    writeProfile(m_path);
+    QVERIFY(!reader.read());
+    QVERIFY(!reader.hasError());
+    QVERIFY(reader.getErrorString().isEmpty());
+    QCOMPARE(m_device.profileName, QString("Loaded"));
+    QCOMPARE(m_device.reads, 1);
 }
 void TestXmlConfigReader::repeatedReadStartsAtBeginning()
 {

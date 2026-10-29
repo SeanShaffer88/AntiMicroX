@@ -23,6 +23,7 @@
 #include "antimicrosettings.h"
 #include "config.h"
 #include "mousehelper.h"
+#include "profileformat.h"
 
 #include <QDir>
 #include <QIcon>
@@ -113,10 +114,10 @@ inline QString configAntimicroLegacyFilePath()
 #endif
 }
 
-const int LATESTCONFIGFILEVERSION = 19;
+const int LATESTCONFIGFILEVERSION = ProfileFormat::LATEST_FILE_VERSION;
 // Specify the last known profile version that requires a migration
 // to be performed in order to be compatible with the latest version.
-const int LATESTCONFIGMIGRATIONVERSION = 5;
+const int LATESTCONFIGMIGRATIONVERSION = ProfileFormat::LATEST_MIGRATION_VERSION;
 const QString localSocketKey = "antimicroxSignalListener";
 const QString unhideCommand = "unhideWindow";
 const QString githubProjectPage = "https://github.com/AntiMicroX/antimicrox/";

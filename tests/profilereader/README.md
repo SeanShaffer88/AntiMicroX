@@ -1,9 +1,9 @@
 # Profile file-access regression tests
 
-These 29 cases compile the production `XMLConfigReader` and test missing/deleted
+These 46 cases compile the production `XMLConfigReader` and test missing/deleted
 profiles, absent input, directory paths, file selection, repeated reads, error
-recovery and release of the previous file object. QtTest also reports two
-setup/teardown checks, for 31 passes per run.
+recovery, release of the previous file object and the declared config version.
+QtTest also reports two setup/teardown checks, for 48 passes per run.
 
 ```sh
 cmake -S tests/profilereader -B build-profile-reader
@@ -22,6 +22,14 @@ Failed file access must not invoke device parsing or reload the previous file.
 A successful retry must clear the previous error. Malformed or truncated XML must
 be rejected before device parsing starts, while UTF-8 BOM, UTF-16 and declared
 Latin-1 profiles must still load.
+
+The `configversion` attribute is checked before any device parsing. A profile
+which declares a version newer than `ProfileFormat::LATEST_FILE_VERSION`
+(`src/profileformat.h`) is rejected with an error naming both versions, because
+unknown elements would otherwise be dropped and a later save would overwrite the
+remaining mappings. Unreadable versions (empty, negative or non-numeric values)
+are rejected as well, while profiles that predate the attribute still load. The
+rejected file is never modified, and fixing the declared version makes it load.
 
 Preflight validation reads the complete XML stream and then rewinds the open
 file for the existing parser/migration path. This adds a parsing pass while

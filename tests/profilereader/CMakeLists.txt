@@ -10,6 +10,7 @@ add_executable(ProfileReaderTests
     testxmlconfigreader.cpp
     ../../src/xmlconfigreader.cpp
     ../../src/xmlconfigreader.h
+    ../../src/profileformat.h
     ../../src/xmlconfigmigration.h
     ../../src/xml/inputdevicexml.h
 )

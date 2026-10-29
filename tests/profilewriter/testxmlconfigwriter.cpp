@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "profileformat.h"
 #include "xml/inputdevicexml.h"
 #include "xmlconfigwriter.h"
 
@@ -52,6 +53,8 @@ class TestXmlConfigWriter : public QObject
     void nullSerializerPreservesProfile();
     void retryClearsError();
     void changingFilenameReleasesPreviousFile();
+    void existingProfileVersion_data();
+    void existingProfileVersion();
 
   private:
     QByteArray readFile(const QString &path);
@@ -238,6 +241,44 @@ void TestXmlConfigWriter::retryClearsError()
     QVERIFY(writer.getErrorString().isEmpty());
 }
 
+void TestXmlConfigWriter::existingProfileVersion_data()
+{
+    QTest::addColumn<int>("version");
+    QTest::addColumn<bool>("overwritten");
+    QTest::newRow("supported") << ProfileFormat::LATEST_FILE_VERSION << true;
+    QTest::newRow("legacy") << 2 << true;
+    QTest::newRow("newer") << ProfileFormat::LATEST_FILE_VERSION + 1 << false;
+    QTest::newRow("much-newer") << 9999 << false;
+}
+void TestXmlConfigWriter::existingProfileVersion()
+{
+    QFETCH(int, version);
+    QFETCH(bool, overwritten);
+    const QByteArray existing =
+        QString("<joystick configversion=\"%1\" appversion=\"99.1.2\"><profilename>Existing</profilename></joystick>")
+            .arg(version)
+            .toUtf8();
+    {
+        QFile file(m_path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(existing), qint64(existing.size()));
+    }
+    XMLConfigWriter writer;
+    writer.setFileName(m_path);
+    InputDeviceXml device(nullptr);
+    writer.write(&device);
+    if (overwritten)
+    {
+        QVERIFY2(!writer.hasError(), qPrintable(writer.getErrorString()));
+        QVERIFY(readFile(m_path).contains("Caf\xc3\xa9 controller"));
+        return;
+    }
+    QVERIFY(writer.hasError());
+    QVERIFY2(writer.getErrorString().contains(QString::number(version)), qPrintable(writer.getErrorString()));
+    QVERIFY2(writer.getErrorString().contains(QString::number(ProfileFormat::LATEST_FILE_VERSION)),
+             qPrintable(writer.getErrorString()));
+    QCOMPARE(readFile(m_path), existing);
+}
 void TestXmlConfigWriter::changingFilenameReleasesPreviousFile()
 {
     XMLConfigWriter writer;

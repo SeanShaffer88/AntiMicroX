@@ -365,6 +365,8 @@ set(antimicrox_HEADERS
         src/mousedialog/uihelpers/mousecontrolsticksettingsdialoghelper.h
         src/mousedialog/uihelpers/mousedpadsettingsdialoghelper.h
         src/mousehelper.h
+        src/profileformat.h
+        src/profilemigration.h
         src/pt1filter.h
         src/qtkeymapperbase.h
         src/sdleventreader.h

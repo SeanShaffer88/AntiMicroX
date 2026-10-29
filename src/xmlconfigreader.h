@@ -56,6 +56,8 @@ class XMLConfigReader : public QObject
     void configJoystick(InputDevice *joystick);
 
   private:
+    bool validateConfigVersion();
+
     QXmlStreamReader *xml;
     QString fileName;
     QFile *configFile;
