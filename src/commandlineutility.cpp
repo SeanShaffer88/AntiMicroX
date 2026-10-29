@@ -18,6 +18,7 @@
 
 #include "commandlineutility.h"
 
+#include "cliarguments.h"
 #include "common.h"
 #include "eventhandlerfactory.h"
 
@@ -228,11 +229,11 @@ void CommandLineUtility::parseArgsProfile(const QCommandLineParser &parser)
 {
     QFileInfo profileFileInfo(parser.value("profile"));
 
-    if (profileFileInfo.exists() && (profileFileInfo.suffix() != "amgp") && (profileFileInfo.suffix() != "xml"))
+    if (profileFileInfo.exists() && !CliArguments::isSupportedProfileSuffix(profileFileInfo.suffix()))
     {
         throw std::runtime_error(
             QObject::tr("Profile location %1 is not an XML file.").arg(parser.value("profile")).toStdString());
-    } else if (profileFileInfo.exists() && ((profileFileInfo.suffix() == "amgp") || (profileFileInfo.suffix() == "xml")))
+    } else if (profileFileInfo.exists())
     {
         QString tempProfileLocation = profileFileInfo.absoluteFilePath();
         qDebug() << "Profile file is set: " << tempProfileLocation;
@@ -248,28 +249,33 @@ void CommandLineUtility::parseArgsProfile(const QCommandLineParser &parser)
 
 void CommandLineUtility::parseArgsPrControle(const QCommandLineParser &parser)
 {
-    bool validNumber = false;
-    int tempNumber = parser.value("profile-controller").toInt(&validNumber);
+    const QString selector = parser.value("profile-controller");
+    int tempNumber = 0;
 
-    if (validNumber)
+    switch (CliArguments::classifyControllerSelector(selector, tempNumber))
     {
+    case CliArguments::SelectorKind::Index: {
         if (controllerNumber == 0)
             controllerNumber = tempNumber;
 
         ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
         tempInfo.setControllerNumber(tempNumber);
         controllerOptionsList.replace(currentListsIndex, tempInfo);
-    } else if (!parser.value("profile-controller").isEmpty())
-    {
+        break;
+    }
+    case CliArguments::SelectorKind::Identifier: {
         if (controllerIDString.isEmpty())
-            controllerIDString = parser.value("profile-controller");
+            controllerIDString = selector;
 
         ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
-        tempInfo.setControllerID(parser.value("profile-controller"));
+        tempInfo.setControllerID(selector);
         controllerOptionsList.replace(currentListsIndex, tempInfo);
-    } else
-    {
-        throw std::runtime_error(QObject::tr("Controller identifier is not a valid value.").toStdString());
+        break;
+    }
+    case CliArguments::SelectorKind::Invalid:
+    default:
+        throw std::runtime_error(
+            QObject::tr("Controller identifier '%1' is not a valid value.").arg(selector).toStdString());
     }
 }
 
@@ -291,24 +297,28 @@ void CommandLineUtility::parseArgsUnload(const QCommandLineParser &parser)
         // A value has been passed. Attempt
         // to validate the value.
 
-        bool validNumber = false;
-        int tempNumber = unloadedProfText.toInt(&validNumber);
+        int tempNumber = 0;
 
-        if (validNumber)
+        switch (CliArguments::classifyControllerSelector(unloadedProfText, tempNumber))
         {
+        case CliArguments::SelectorKind::Index: {
             controllerNumber = tempNumber;
             gameControllerOptionInfo = getControllerOptionsList().at(currentListsIndex);
             gameControllerOptionInfo.setControllerNumber(controllerNumber);
             controllerOptionsList.replace(currentListsIndex, gameControllerOptionInfo);
-        } else if (!unloadedProfText.isEmpty())
-        {
+            break;
+        }
+        case CliArguments::SelectorKind::Identifier: {
             controllerIDString = unloadedProfText;
             gameControllerOptionInfo = getControllerOptionsList().at(currentListsIndex);
             gameControllerOptionInfo.setControllerID(controllerIDString);
             controllerOptionsList.replace(currentListsIndex, gameControllerOptionInfo);
-        } else
-        {
-            throw std::runtime_error(QObject::tr("Controller identifier is not a valid value.").toStdString());
+            break;
+        }
+        case CliArguments::SelectorKind::Invalid:
+        default:
+            throw std::runtime_error(
+                QObject::tr("Controller identifier '%1' is not a valid value.").arg(unloadedProfText).toStdString());
         }
     } else
     {
@@ -319,53 +329,56 @@ void CommandLineUtility::parseArgsUnload(const QCommandLineParser &parser)
 
 void CommandLineUtility::parseArgsStartSet(const QCommandLineParser &parser)
 {
-    QStringList parserValues = QStringList() << parser.values("startSet");
-    QListIterator<QString> profileForStartset(parserValues);
-    QString startSetText = QString();
-
-    if (profileForStartset.hasNext())
-    {
-        startSetText = profileForStartset.next();
-
-        bool validNumber = false;
-        int tempNumber = startSetText.toInt(&validNumber);
-
-        if (validNumber && (tempNumber >= 1) && (tempNumber <= 8))
-        {
-            startSetNumber = tempNumber;
-            ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
-            tempInfo.setStartSetNumber(startSetNumber);
-            controllerOptionsList.replace(currentListsIndex, tempInfo);
-        } else if (validNumber)
-        {
-            throw std::runtime_error(QObject::tr("An invalid set number '%1' was specified.").arg(tempNumber).toStdString());
-        }
-
-        if (profileForStartset.hasNext())
-        {
-            startSetText = profileForStartset.next();
-
-            if (validNumber)
-            {
-                controllerNumber = tempNumber;
-                ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
-                tempInfo.setControllerNumber(controllerNumber);
-                controllerOptionsList.replace(currentListsIndex, tempInfo);
-            } else if (!startSetText.isEmpty())
-            {
-                controllerIDString = startSetText;
-                ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
-                tempInfo.setControllerID(controllerIDString);
-                controllerOptionsList.replace(currentListsIndex, tempInfo);
-            } else
-            {
-                throw std::runtime_error(
-                    QObject::tr("Controller identifier '%s' is not a valid value.").arg(startSetText).toStdString());
-            }
-        }
-    } else
-    {
+    const QStringList parserValues = parser.values("startSet");
+    if (parserValues.isEmpty())
         throw std::runtime_error(QObject::tr("No set number was specified.").toStdString());
+
+    const QString startSetText = parserValues.first();
+    int tempNumber = 0;
+
+    if (!CliArguments::parseSetNumber(startSetText, tempNumber))
+    {
+        throw std::runtime_error(QObject::tr("An invalid set number '%1' was specified. Allowed values are %2 to %3.")
+                                     .arg(startSetText)
+                                     .arg(CliArguments::FIRST_SET_NUMBER)
+                                     .arg(CliArguments::LAST_SET_NUMBER)
+                                     .toStdString());
+    }
+
+    startSetNumber = tempNumber;
+    ControllerOptionsInfo tempInfo = getControllerOptionsList().at(currentListsIndex);
+    tempInfo.setStartSetNumber(startSetNumber);
+    controllerOptionsList.replace(currentListsIndex, tempInfo);
+
+    // The optional second value selects the controller and has to be classified
+    // on its own: a numeric selector is an index even when the set number was
+    // given as a number as well.
+    if (parserValues.size() < 2)
+        return;
+
+    const QString selector = parserValues.at(1);
+    int controllerIndex = 0;
+
+    switch (CliArguments::classifyControllerSelector(selector, controllerIndex))
+    {
+    case CliArguments::SelectorKind::Index: {
+        controllerNumber = controllerIndex;
+        tempInfo = getControllerOptionsList().at(currentListsIndex);
+        tempInfo.setControllerNumber(controllerNumber);
+        controllerOptionsList.replace(currentListsIndex, tempInfo);
+        break;
+    }
+    case CliArguments::SelectorKind::Identifier: {
+        controllerIDString = selector;
+        tempInfo = getControllerOptionsList().at(currentListsIndex);
+        tempInfo.setControllerID(controllerIDString);
+        controllerOptionsList.replace(currentListsIndex, tempInfo);
+        break;
+    }
+    case CliArguments::SelectorKind::Invalid:
+    default:
+        throw std::runtime_error(
+            QObject::tr("Controller identifier '%1' is not a valid value.").arg(selector).toStdString());
     }
 }
 
