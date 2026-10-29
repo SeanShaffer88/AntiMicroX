@@ -262,6 +262,7 @@ set(antimicrox_SOURCES
 
 set(antimicrox_HEADERS
         src/antimicrosettings.h
+        src/cliarguments.h
         src/antkeymapper.h
         src/applaunchhelper.h
         src/autoprofileinfo.h

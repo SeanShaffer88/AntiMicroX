@@ -333,6 +333,23 @@ elements this build does not understand would be lost. `src/profileformat.h` hol
 latest supported format version. Automatic migration of older profiles is handled
 separately by the profile reader.
 
+## Command line argument tests
+
+Controller selectors (`--profile-controller`, `--unload`, `--startSet`) and set
+numbers are classified by the header-only helpers in `src/cliarguments.h`. They
+depend on Qt Core alone:
+
+```sh
+cmake -S tests/cliarguments -B build-cli-arguments
+cmake --build build-cli-arguments --config Debug
+ctest --test-dir build-cli-arguments -C Debug --output-on-failure
+```
+
+The suite checks indices versus controller names/GUIDs, negative and overflowing
+numbers, the 1-8 set number range and profile file extensions. It covers the
+classification rules only; the options themselves are exercised by the
+application builds.
+
 ## Translation lookup tests
 
 The language helpers in `src/translations.h` decide which translation files are

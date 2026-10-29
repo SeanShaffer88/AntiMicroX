@@ -245,7 +245,7 @@ void MainWindow::alterConfigFromSettings()
             loadConfigFile(m_cmdutility->getProfileLocation(), m_cmdutility->getControllerNumber());
         } else if (m_cmdutility->hasControllerID())
         {
-            loadConfigFile(m_cmdutility->getProfileLocation(), m_cmdutility->hasControllerID());
+            loadConfigFile(m_cmdutility->getProfileLocation(), m_cmdutility->getControllerID());
         } else
         {
             loadConfigFile(m_cmdutility->getProfileLocation());
@@ -266,7 +266,7 @@ void MainWindow::alterConfigFromSettings()
                 loadConfigFile(temp.getProfileLocation(), temp.getControllerNumber());
             } else if (temp.hasControllerID())
             {
-                loadConfigFile(temp.getProfileLocation(), temp.hasControllerID());
+                loadConfigFile(temp.getProfileLocation(), temp.getControllerID());
             } else
             {
                 loadConfigFile(temp.getProfileLocation());
@@ -278,7 +278,7 @@ void MainWindow::alterConfigFromSettings()
                 unloadCurrentConfig(temp.getControllerNumber());
             } else if (temp.hasControllerID())
             {
-                unloadCurrentConfig(temp.hasControllerID());
+                unloadCurrentConfig(temp.getControllerID());
             } else
             {
                 unloadCurrentConfig(0);
