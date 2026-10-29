@@ -18,11 +18,57 @@
 
 #include "xmlconfigwriter.h"
 
+#include "profileformat.h"
 #include "xml/inputdevicexml.h"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QSaveFile>
+#include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+
+namespace {
+
+/**
+ * @brief Tell whether an existing profile may not be overwritten by this build
+ *
+ * Writing over a profile which was created by a newer AntiMicroX would silently
+ * discard the elements this build does not understand, so such targets are left
+ * untouched. Unreadable or non-profile targets keep their historical behaviour:
+ * the write is attempted and any failure is reported by the caller.
+ *
+ * @param[in] filename Target profile path
+ * @param[out] error Message explaining why the file must not be overwritten
+ * @return true when the existing file declares an unsupported config version
+ */
+bool targetDeclaresNewerVersion(const QString &filename, QString &error)
+{
+    error.clear();
+    QFile existing(filename);
+    if (!existing.exists() || !existing.open(QIODevice::ReadOnly | QIODevice::Text))
+        return false;
+
+    QXmlStreamReader reader(&existing);
+    while (!reader.atEnd() && !reader.isStartElement())
+        reader.readNext();
+    if (!reader.isStartElement())
+        return false;
+
+    const QString declared = reader.attributes().value(QStringLiteral("configversion")).toString().trimmed();
+    bool converted = false;
+    const int version = declared.toInt(&converted);
+    if (!converted || (version <= ProfileFormat::LATEST_FILE_VERSION))
+        return false;
+
+    error = QCoreApplication::translate(
+                "XMLConfigWriter",
+                "Could not write to profile at %1.\nThe existing file uses config version %2, which is newer than "
+                "the newest config version supported by this build (%3), so it has been left unchanged.")
+                .arg(filename, declared, QString::number(ProfileFormat::LATEST_FILE_VERSION));
+    return true;
+}
+
+} // namespace
 
 XMLConfigWriter::XMLConfigWriter(QObject *parent)
     : QObject(parent)
@@ -66,6 +112,14 @@ void XMLConfigWriter::write(InputDeviceXml *joystickXml)
     {
         writerError = true;
         writerErrorString = tr("Could not write to profile at %1.").arg(fileName);
+        return;
+    }
+
+    QString unsupportedTarget;
+    if (targetDeclaresNewerVersion(configFile->fileName(), unsupportedTarget))
+    {
+        writerError = true;
+        writerErrorString = unsupportedTarget;
         return;
     }
 

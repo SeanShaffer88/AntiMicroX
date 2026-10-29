@@ -19,6 +19,7 @@
 #include "xmlconfigreader.h"
 
 #include "globalvariables.h"
+#include "profileformat.h"
 #include "profilemigration.h"
 #include "xml/inputdevicexml.h"
 #include "xmlconfigmigration.h"
@@ -135,6 +136,10 @@ bool XMLConfigReader::read()
     if (!deviceTypes.contains(xml->name().toString()))
     {
         xml->raiseError("Root node is not a joystick or controller");
+    } else if (!validateConfigVersion())
+    {
+        // The profile declares a format this build cannot represent.
+        // validateConfigVersion() has already described the problem.
     } else if (xml->name().toString() == GlobalVariables::Joystick::xmlName)
     {
         XMLConfigMigration migration(xml);
@@ -188,6 +193,50 @@ bool XMLConfigReader::read()
         xml->clear();
     }
     return error;
+}
+
+/**
+ * @brief Check the document's "configversion" before any mapping is touched
+ *
+ * Profiles written by a newer AntiMicroX can contain elements which are unknown
+ * to this build. Parsing them would silently drop those mappings, and a later
+ * save would then overwrite the original file with the reduced version, so such
+ * profiles are rejected while the file is left untouched.
+ *
+ * @return true when the profile may be parsed
+ */
+bool XMLConfigReader::validateConfigVersion()
+{
+    const QXmlStreamAttributes attributes = xml->attributes();
+    if (!attributes.hasAttribute(QStringLiteral("configversion")))
+        return true; // Profiles created before the version attribute existed.
+
+    const QString declared = attributes.value(QStringLiteral("configversion")).toString().trimmed();
+    bool converted = false;
+    const int version = declared.toInt(&converted);
+    if (!converted || (version < 0))
+    {
+        xml->raiseError(tr("Could not read profile %1.\nThe profile declares an unreadable config version "
+                           "\"%2\".")
+                            .arg(configFile->fileName(), declared));
+        return false;
+    }
+
+    if (version > ProfileFormat::LATEST_FILE_VERSION)
+    {
+        QString message = tr("Could not read profile %1.\nThe profile uses config version %2, which is newer "
+                             "than the newest config version supported by this build (%3). Update AntiMicroX "
+                             "to use this profile.")
+                              .arg(configFile->fileName(), declared, QString::number(ProfileFormat::LATEST_FILE_VERSION));
+        const QString writingApp = attributes.value(QStringLiteral("appversion")).toString();
+        if (!writingApp.isEmpty())
+            message.append(QStringLiteral("\n")).append(tr("The profile was written by AntiMicroX %1.").arg(writingApp));
+
+        xml->raiseError(message);
+        return false;
+    }
+
+    return true;
 }
 
 const QString XMLConfigReader::getErrorString()

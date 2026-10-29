@@ -118,8 +118,11 @@ invalid or unsupported gamepad profile indices, continued loading after rejected
 elements, both legacy and current trigger indices, valid D-pad settings, and
 parser lifetime across repeated loads. Integration checks also cover malformed
 complete-profile rejection, recovery, and versions 2–5 joystick migration with
-Unicode, empty, and truncated inputs. Unsupported entries are skipped as whole
-XML subtrees; supported mappings later in the set remain usable.
+Unicode, empty, and truncated inputs. Profiles which declare a `configversion`
+newer than this build supports, or an unreadable version value, are rejected
+before any mapping changes and their files are left untouched. Unsupported
+entries are skipped as whole XML subtrees; supported mappings later in the set
+remain usable.
 
 To include the pinned community profile corpus used in CI:
 
@@ -324,8 +327,11 @@ full device/profile round-trip or interactive testing.
 
 Normal profile saves use a temporary file in the destination directory, then commit
 the replacement. The directory must permit temporary-file creation; the writer reports
-a failure rather than falling back to an in-place overwrite. Automatic migration of
-older profiles is handled separately by the profile reader.
+a failure rather than falling back to an in-place overwrite. An existing profile which
+declares a newer `configversion` than this build supports is not replaced, because the
+elements this build does not understand would be lost. `src/profileformat.h` holds the
+latest supported format version. Automatic migration of older profiles is handled
+separately by the profile reader.
 
 ## Building Windows installer
 

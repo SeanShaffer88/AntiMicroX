@@ -11,6 +11,7 @@
 #include "joybuttontypes/joybutton.h"
 #include "joystick.h"
 #include "logger.h"
+#include "profileformat.h"
 #include "vdpad.h"
 #include "xml/joyaxisxml.h"
 #include "xml/joybuttonxml.h"
@@ -40,6 +41,7 @@ class TestGameControllerSetXml : public QObject
     void malformedProfile_data();
     void malformedProfile();
     void retryAfterMalformedProfile();
+    void futureConfigVersionRejected();
     void legacyMigration_data();
     void legacyMigration();
     void communityProfiles_data();
@@ -254,6 +256,49 @@ void TestGameControllerSetXml::retryAfterMalformedProfile()
     QVERIFY(!reader.read());
     QVERIFY(!reader.hasError());
     QCOMPARE(m_device->getProfileName(), QString("Loaded"));
+    QVERIFY(m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
+}
+void TestGameControllerSetXml::futureConfigVersionRejected()
+{
+    const QString path = m_directory.filePath("future.amgp");
+    const QByteArray contents =
+        "<gamecontroller configversion=\"20\" appversion=\"99.1.2\"><profilename>Changed</profilename>"
+        "<sets><set index=\"1\"><button index=\"1\"><toggle>true</toggle></button></set></sets></gamecontroller>";
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write(contents), qint64(contents.size()));
+    }
+    m_device->setProfileName("Before");
+    m_device->getActiveSetJoystick()->getJoyButton(0)->setToggle(false);
+    XMLConfigReader reader;
+    reader.setJoystick(m_device.get());
+    reader.setFileName(path);
+    // A profile using a newer format must not be partially applied.
+    QVERIFY(reader.read());
+    QVERIFY(reader.hasError());
+    QVERIFY2(reader.getErrorString().contains(QString::number(ProfileFormat::LATEST_FILE_VERSION + 1)),
+             qPrintable(reader.getErrorString()));
+    QVERIFY2(reader.getErrorString().contains("99.1.2"), qPrintable(reader.getErrorString()));
+    QCOMPARE(m_device->getProfileName(), QString("Before"));
+    QVERIFY(!m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), contents);
+    }
+    // The same content becomes readable once it declares a supported version.
+    {
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QByteArray supported = contents;
+        supported.replace("configversion=\"20\"",
+                          "configversion=\"" + QByteArray::number(ProfileFormat::LATEST_FILE_VERSION) + "\"");
+        QCOMPARE(file.write(supported), qint64(supported.size()));
+    }
+    QVERIFY(!reader.read());
+    QVERIFY(!reader.hasError());
+    QCOMPARE(m_device->getProfileName(), QString("Changed"));
     QVERIFY(m_device->getActiveSetJoystick()->getJoyButton(0)->getToggleState());
 }
 void TestGameControllerSetXml::legacyMigration_data()
