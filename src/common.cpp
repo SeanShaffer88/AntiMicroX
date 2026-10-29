@@ -144,8 +144,8 @@ void reloadTranslations(QTranslator *translator, QTranslator *appTranslator, con
     if (qtTranslation.isEmpty())
     {
         WARN() << "Could not find Qt translations for language" << language << "in"
-               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath),
-                                                  applicationDirPath);
+               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath), applicationDirPath)
+                      .join(", ");
     } else if (!translator->load(qtTranslation))
     {
         WARN() << "Could not load Qt translations from" << qtTranslation;
@@ -158,7 +158,7 @@ void reloadTranslations(QTranslator *translator, QTranslator *appTranslator, con
     if (appTranslation.isEmpty())
     {
         WARN() << "Could not find application translations for language" << language << "in"
-               << Translations::appTranslationDirs(applicationDirPath);
+               << Translations::appTranslationDirs(applicationDirPath).join(", ");
     } else if (!translator->load(appTranslation))
     {
         WARN() << "Could not load application translations from" << appTranslation;

@@ -78,3 +78,14 @@ jobs:
                       Get-Content build-translations/translation-results.txt
                   }
                   exit $testExitCode
+            - name: Report failing checks
+              if: failure()
+              shell: bash
+              run: |
+                  result=build-translations/translation-results.txt
+                  if [ -f "$result" ]; then
+                      grep -E "^(FAIL!|QFATAL|Received signal)" -A 2 "$result" | head -n 20 | while IFS= read -r line; do
+                          echo "::error::$line"
+                      done
+                  fi
+              continue-on-error: true

@@ -434,8 +434,8 @@ int main(int argc, char *argv[])
     if (qtTranslation.isEmpty())
     {
         WARN() << "Could not find Qt translations for language" << targetLang << "in"
-               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath),
-                                                  applicationDirPath);
+               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath), applicationDirPath)
+                      .join(", ");
     } else
     {
         qtTranslator.load(qtTranslation);
@@ -449,7 +449,7 @@ int main(int argc, char *argv[])
     if (appTranslation.isEmpty())
     {
         WARN() << "Could not find application translations for language" << targetLang << "in"
-               << Translations::appTranslationDirs(applicationDirPath);
+               << Translations::appTranslationDirs(applicationDirPath).join(", ");
     } else
     {
         DEBUG() << "Loading application translations from" << appTranslation;

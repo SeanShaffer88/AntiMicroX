@@ -2,7 +2,6 @@
 
 #include "translations.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QSettings>
@@ -32,14 +31,25 @@ class TestTranslations : public QObject
     void findsQtTranslation();
 
   private:
-    QString createTranslation(const QString &relativePath) const;
+    QString uniquePath(const QString &suffix = QString()) const;
+    QString writeFile(const QString &relativePath, const QByteArray &contents) const;
 
     QTemporaryDir m_directory;
 };
 
 void TestTranslations::initTestCase() { QVERIFY(m_directory.isValid()); }
 
-QString TestTranslations::createTranslation(const QString &relativePath) const
+/**
+ * A QSettings instance per path is cached for the lifetime of the process and
+ * only re-read when the file changes, so every data row needs its own file.
+ */
+QString TestTranslations::uniquePath(const QString &suffix) const
+{
+    return m_directory.filePath(QString::fromLatin1(QTest::currentTestFunction()) +
+                                QString::fromLatin1(QTest::currentDataTag()) + suffix + QStringLiteral(".ini"));
+}
+
+QString TestTranslations::writeFile(const QString &relativePath, const QByteArray &contents) const
 {
     // QVERIFY and QCOMPARE may not be used here: this function returns a value.
     const QString path = m_directory.filePath(relativePath);
@@ -49,8 +59,8 @@ QString TestTranslations::createTranslation(const QString &relativePath) const
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly))
         return QString();
-    // Content is irrelevant: only the file lookup is exercised here.
-    file.write("not-a-real-translation");
+    if (file.write(contents) != qint64(contents.size()))
+        return QString();
     file.close();
     return path;
 }
@@ -63,7 +73,9 @@ void TestTranslations::languageSetting_data()
     QTest::newRow("unset") << QString("[General]\nfoo=bar\n") << QString();
     QTest::newRow("lower-case-key") << QString("language=de\n") << QString("de");
     QTest::newRow("upper-case-key") << QString("[General]\nLanguage=de\n") << QString("de");
-    QTest::newRow("other-section") << QString("[Other]\nLanguage=pl\n") << QString("pl");
+    QTest::newRow("non-language-value") << QString("[General]\nLanguage=pl\nSurvives=1\n") << QString("pl");
+    // Values below another section are not the application's top level key.
+    QTest::newRow("other-section") << QString("[Other]\nLanguage=pl\n") << QString();
     QTest::newRow("surrounding-space") << QString("[General]\nLanguage=  zh_CN  \n") << QString("zh_CN");
     QTest::newRow("empty-value") << QString("[General]\nLanguage=\n") << QString();
 }
@@ -72,15 +84,11 @@ void TestTranslations::languageSetting()
 {
     QFETCH(QString, ini);
     QFETCH(QString, expected);
-    const QString path = m_directory.filePath("language-setting.ini");
+    const QString path = uniquePath();
     QFile::remove(path);
 
     if (!ini.isNull())
-    {
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        QVERIFY(file.write(ini.toUtf8()) > 0);
-    }
+        QVERIFY(!writeFile(QFileInfo(path).fileName(), ini.toUtf8()).isEmpty());
 
     QSettings settings(path, QSettings::IniFormat);
     QCOMPARE(Translations::languageSetting(settings), expected);
@@ -99,8 +107,8 @@ void TestTranslations::clearLanguageSetting_data()
     QTest::addColumn<QString>("ini");
     QTest::addColumn<bool>("removed");
     QTest::newRow("canonical") << QString("[General]\nLanguage=de\nSurvives=1\n") << true;
-    QTest::newRow("lower-case") << QString("language=de\nSurvives=1\n") << true;
-    QTest::newRow("german-value") << QString("[General]\nLanguage=en\n") << true;
+    QTest::newRow("lower-case-key") << QString("language=de\nSurvives=1\n") << true;
+    QTest::newRow("english") << QString("[General]\nLanguage=en\n") << true;
     QTest::newRow("nothing-stored") << QString("[General]\nSurvives=1\n") << false;
 }
 
@@ -108,22 +116,23 @@ void TestTranslations::clearLanguageSetting()
 {
     QFETCH(QString, ini);
     QFETCH(bool, removed);
-    const QString path = m_directory.filePath("clear-language-setting.ini");
-    QFile::remove(path);
+    const QString path = uniquePath();
+    QVERIFY(!writeFile(QFileInfo(path).fileName(), ini.toUtf8()).isEmpty());
+
     {
-        QFile file(path);
-        QVERIFY(file.open(QIODevice::WriteOnly));
-        QVERIFY(file.write(ini.toUtf8()) > 0);
+        QSettings settings(path, QSettings::IniFormat);
+        QCOMPARE(Translations::clearLanguageSetting(settings), removed);
+        QVERIFY(settings.sync());
+        QVERIFY2(Translations::languageSetting(settings).isEmpty(), qPrintable(Translations::languageSetting(settings)));
     }
 
-    QSettings settings(path, QSettings::IniFormat);
-    QCOMPARE(Translations::clearLanguageSetting(settings), removed);
-    settings.sync();
-
-    QSettings reread(path, QSettings::IniFormat);
-    QVERIFY2(Translations::languageSetting(reread).isEmpty(), qPrintable(Translations::languageSetting(reread)));
+    // Inspect the file itself so the checks do not depend on QSettings caching.
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QString contents = QString::fromUtf8(file.readAll());
+    QVERIFY2(!contents.contains("language", Qt::CaseInsensitive), qPrintable(contents));
     if (ini.contains("Survives"))
-        QCOMPARE(reread.value("Survives").toInt(), 1);
+        QVERIFY2(contents.contains("Survives=1"), qPrintable(contents));
 }
 
 void TestTranslations::translationFileNames_data()
@@ -181,7 +190,7 @@ void TestTranslations::findsInstalledTranslation()
 {
     // <prefix>/bin/../share/antimicrox/translations is the normal install layout.
     const QString binaryDir = m_directory.filePath("install/bin");
-    const QString expected = createTranslation("install/share/antimicrox/translations/antimicrox_de.qm");
+    const QString expected = writeFile("install/share/antimicrox/translations/antimicrox_de.qm", "translation");
     QVERIFY(!expected.isEmpty());
     QCOMPARE(Translations::findAppTranslation("de", binaryDir), expected);
     QVERIFY(Translations::findAppTranslation("fr", binaryDir).isEmpty());
@@ -189,12 +198,13 @@ void TestTranslations::findsInstalledTranslation()
 
 void TestTranslations::prefersFlatpakInstallation()
 {
-    const QString binaryDir = m_directory.filePath("flatpak/bin");
-    const QString local = createTranslation("flatpak/share/antimicrox/translations/antimicrox_pl.qm");
-    QVERIFY(!local.isEmpty());
-    // No /app tree in the test environment, so the local copy is used.
     if (QFileInfo::exists("/app/share/antimicrox/translations"))
         QSKIP("The host provides a Flatpak translation tree");
+
+    // Without a Flatpak tree the copy next to the executable is used.
+    const QString binaryDir = m_directory.filePath("flatpak/bin");
+    const QString local = writeFile("flatpak/share/antimicrox/translations/antimicrox_pl.qm", "translation");
+    QVERIFY(!local.isEmpty());
     QCOMPARE(Translations::findAppTranslation("pl", binaryDir), local);
 }
 
@@ -236,7 +246,7 @@ void TestTranslations::qtTranslationDirs()
 void TestTranslations::findsQtTranslation()
 {
     const QString qtPath = m_directory.filePath("qt/translations");
-    const QString expected = createTranslation("qt/translations/qt_de.qm");
+    const QString expected = writeFile("qt/translations/qt_de.qm", "translation");
     QVERIFY(!expected.isEmpty());
     QCOMPARE(Translations::findQtTranslation("de", qtPath, QString()), expected);
     QCOMPARE(Translations::findQtTranslation("de", QString(), QString()), QString());
