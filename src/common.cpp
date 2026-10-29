@@ -19,6 +19,9 @@
 
 #include "common.h"
 
+#include "logger.h"
+#include "translations.h"
+
 #include <QApplication>
 #include <QDebug>
 #include <QDirIterator>
@@ -123,34 +126,43 @@ QStringList parseArgumentsString(const QString &tempString)
  * @param Language code
  */
 void reloadTranslations(QTranslator *translator, QTranslator *appTranslator, const QString &language)
-{ // Remove application specific translation strings
+{
+    if ((translator == nullptr) || (appTranslator == nullptr))
+        return;
+
+    // Remove application specific translation strings
     qApp->removeTranslator(translator);
 
     // Remove old Qt translation strings
     qApp->removeTranslator(appTranslator);
 
-// Load new Qt translation strings
-#if defined(Q_OS_UNIX)
-    translator->load(QString("qt_").append(language), QLibraryInfo::location(QLibraryInfo::TranslationsPath));
-#elif defined(Q_OS_WIN)
-    #ifdef QT_DEBUG
-    translator->load(QString("qt_").append(language), QLibraryInfo::location(QLibraryInfo::TranslationsPath));
-    #else
-    translator->load(QString("qt_").append(language),
-                     QApplication::applicationDirPath().append("\\share\\qt\\translations"));
-    #endif
-#endif
+    const QString applicationDirPath = QApplication::applicationDirPath();
+
+    // Load Qt's own translation strings
+    const QString qtTranslation = Translations::findQtTranslation(
+        language, QLibraryInfo::location(QLibraryInfo::TranslationsPath), applicationDirPath);
+    if (qtTranslation.isEmpty())
+    {
+        WARN() << "Could not find Qt translations for language" << language << "in"
+               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath),
+                                                  applicationDirPath);
+    } else if (!translator->load(qtTranslation))
+    {
+        WARN() << "Could not load Qt translations from" << qtTranslation;
+    }
 
     qApp->installTranslator(appTranslator);
 
-// Load application specific translation strings
-#if defined(Q_OS_UNIX)
-    translator->load("antimicrox_" + language,
-                     QApplication::applicationDirPath().append("/../share/antimicrox/translations"));
-#elif defined(Q_OS_WIN)
-    translator->load("antimicrox_" + language,
-                     QApplication::applicationDirPath().append("\\share\\antimicrox\\translations"));
-#endif
+    // Load application specific translation strings
+    const QString appTranslation = Translations::findAppTranslation(language, applicationDirPath);
+    if (appTranslation.isEmpty())
+    {
+        WARN() << "Could not find application translations for language" << language << "in"
+               << Translations::appTranslationDirs(applicationDirPath);
+    } else if (!translator->load(appTranslation))
+    {
+        WARN() << "Could not load application translations from" << appTranslation;
+    }
 
     qApp->installTranslator(translator);
 }

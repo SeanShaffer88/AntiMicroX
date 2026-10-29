@@ -374,6 +374,7 @@ set(antimicrox_HEADERS
         src/setjoystick.h
         src/gui/simplekeygrabberbutton.h
         src/statisticsestimator.h
+        src/translations.h
         src/gui/stickpushbuttongroup.h
         src/uihelpers/advancebuttondialoghelper.h
         src/uihelpers/buttoneditdialoghelper.h

@@ -30,6 +30,7 @@
 #include "localantimicroserver.h"
 #include "mainwindow.h"
 #include "setjoystick.h"
+#include "translations.h"
 
 #include "eventhandlerfactory.h"
 #include "logger.h"
@@ -410,10 +411,11 @@ int main(int argc, char *argv[])
     }
 
     QString targetLang = QLocale::system().name();
+    const QString configuredLanguage = Translations::languageSetting(settings);
 
-    if (settings.contains("Language"))
+    if (!configuredLanguage.isEmpty())
     {
-        targetLang = settings.value("Language").toString();
+        targetLang = configuredLanguage;
     }
 
     QTranslator qtTranslator;
@@ -423,29 +425,35 @@ int main(int argc, char *argv[])
     QGuiApplication::setDesktopFileName("io.github.antimicrox.antimicrox");
 
     installSignalHandlers();
+#endif
 
-    QString transPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
+    const QString applicationDirPath = QApplication::applicationDirPath();
+    const QString qtTranslation = Translations::findQtTranslation(
+        targetLang, QLibraryInfo::location(QLibraryInfo::TranslationsPath), applicationDirPath);
 
-    if (QDir(transPath).entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries).count() == 0)
+    if (qtTranslation.isEmpty())
     {
-        qtTranslator.load(QString("qt_").append(targetLang), "/app/share/antimicrox/translations");
+        WARN() << "Could not find Qt translations for language" << targetLang << "in"
+               << Translations::qtTranslationDirs(QLibraryInfo::location(QLibraryInfo::TranslationsPath),
+                                                  applicationDirPath);
     } else
     {
-        qtTranslator.load(QString("qt_").append(targetLang), transPath);
+        qtTranslator.load(qtTranslation);
     }
 
-#endif
     antimicrox.installTranslator(&qtTranslator);
 
     QTranslator myappTranslator;
+    const QString appTranslation = Translations::findAppTranslation(targetLang, applicationDirPath);
 
-    if (QDir("/app/share/antimicrox").entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries).count() > 0)
+    if (appTranslation.isEmpty())
     {
-        myappTranslator.load(QString("antimicrox_").append(targetLang), "app/share/antimicrox/translations");
+        WARN() << "Could not find application translations for language" << targetLang << "in"
+               << Translations::appTranslationDirs(applicationDirPath);
     } else
     {
-        myappTranslator.load(QString("antimicrox_").append(targetLang),
-                             QApplication::applicationDirPath().append("/../share/antimicrox/translations"));
+        DEBUG() << "Loading application translations from" << appTranslation;
+        myappTranslator.load(appTranslation);
     }
 
     antimicrox.installTranslator(&myappTranslator);

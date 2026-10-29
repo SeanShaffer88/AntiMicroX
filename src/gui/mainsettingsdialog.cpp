@@ -27,6 +27,7 @@
 #include "eventhandlerfactory.h"
 #include "globalvariables.h"
 #include "inputdevice.h"
+#include "translations.h"
 
 #ifdef WITH_X11
     #include "x11extras.h"
@@ -733,10 +734,7 @@ void MainSettingsDialog::checkLocaleChange()
     int row = ui->localeListWidget->currentRow();
     if (row == 0)
     {
-        if (settings->contains("Language"))
-        {
-            settings->remove("Language");
-        }
+        Translations::clearLanguageSetting(*settings);
 
         settings->getLock()->unlock();
         emit changeLanguage(QLocale::system().name());
@@ -1726,9 +1724,11 @@ void MainSettingsDialog::checkSmoothingWidgetStatus(bool enabled)
 
 void MainSettingsDialog::changePresetLanguage()
 {
-    if (settings->contains("Language"))
+    const QString configuredLanguage = Translations::languageSetting(*settings);
+
+    if (!configuredLanguage.isEmpty())
     {
-        QString targetLang = settings->value("Language").toString();
+        QString targetLang = configuredLanguage;
         if (targetLang == "br")
         {
             ui->localeListWidget->setCurrentRow(1);
