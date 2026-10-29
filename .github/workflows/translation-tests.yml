@@ -65,7 +65,10 @@ jobs:
                   cmake -S tests/translations -B build-translations -A x64
                   -DQT_DIR="$env:QT_ROOT_DIR/lib/cmake/Qt${{ matrix.major }}"
             - name: Build
-              run: cmake --build build-translations --config Debug --parallel 2
+              shell: bash
+              run: |
+                  set -o pipefail
+                  cmake --build build-translations --config Debug --parallel 2 2>&1 | tee build-output.log
             - name: Test (Linux)
               if: runner.os == 'Linux'
               run: ctest --test-dir build-translations --output-on-failure
@@ -82,10 +85,15 @@ jobs:
               if: failure()
               shell: bash
               run: |
-                  result=build-translations/translation-results.txt
-                  if [ -f "$result" ]; then
-                      grep -E "^(FAIL!|QFATAL|Received signal)" -A 2 "$result" | head -n 20 | while IFS= read -r line; do
+                  if [ -f build-output.log ]; then
+                      grep -E "error:" build-output.log | head -n 10 | while IFS= read -r line; do
                           echo "::error::$line"
                       done
+                  fi
+                  if [ -f build-translations/translation-results.txt ]; then
+                      grep -E "^(FAIL!|QFATAL|Received signal)" -A 2 build-translations/translation-results.txt | head -n 20 |
+                          while IFS= read -r line; do
+                              echo "::error::$line"
+                          done
                   fi
               continue-on-error: true

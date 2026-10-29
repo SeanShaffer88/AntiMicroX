@@ -4,6 +4,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -122,7 +123,8 @@ void TestTranslations::clearLanguageSetting()
     {
         QSettings settings(path, QSettings::IniFormat);
         QCOMPARE(Translations::clearLanguageSetting(settings), removed);
-        QVERIFY(settings.sync());
+        // QSettings::sync() returns void; the write itself reports no failure.
+        settings.sync();
         QVERIFY2(Translations::languageSetting(settings).isEmpty(), qPrintable(Translations::languageSetting(settings)));
     }
 
